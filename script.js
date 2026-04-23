@@ -1,359 +1,178 @@
+const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+const timerMap = {}; // id -> startDate
+
+function fmtDate(d) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+        d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtDur(secs) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
+
+function countdown(start) {
+    const diff = start - new Date();
+    if (diff <= 0) return 'starting now';
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    if (d > 0) return `in ${d}d ${h}h`;
+    if (h > 0) return `in ${h}h ${m}m`;
+    return `in ${m}m`;
+}
+
+// Refresh all countdowns every 30 seconds
+setInterval(() => {
+    Object.entries(timerMap).forEach(([id, start]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = countdown(start);
+    });
+}, 30000);
+
+function buildCard(contest, index, platform) {
+    const { name, start, durSecs, url } = contest;
+    const isSoon = (start - new Date()) < TWO_DAYS && start > new Date();
+    const timerId = `timer-${platform}-${index}`;
+    timerMap[timerId] = start;
+
+    const card = document.createElement('div');
+    card.className = `contest-item p-4 border rounded-lg relative cursor-default transition-all duration-300 hover:scale-105 ${
+        isSoon
+            ? 'border-red-500 bg-red-900/20 hover:border-red-300'
+            : 'border-blue-500 bg-gray-700 hover:border-blue-300'
+    }`;
+
+    card.innerHTML = `
+        <div class="flex items-start justify-between gap-2">
+            <h3 class="text-sm font-bold ${isSoon ? 'text-red-400' : 'text-blue-400'} leading-snug">
+                ${name}
+            </h3>
+            ${isSoon ? `<span class="text-xs font-bold text-red-400 bg-red-900/40 border border-red-500 px-2 py-0.5 rounded shrink-0">SOON</span>` : ''}
+        </div>
+
+        <div class="mt-2 space-y-1 text-xs ${isSoon ? 'text-red-200' : 'text-gray-300'}">
+            <p>📅 ${fmtDate(start)}</p>
+            <p>⏱ ${fmtDur(durSecs)}</p>
+            <p id="${timerId}" class="font-mono ${isSoon ? 'text-red-300' : 'text-blue-300'}">${countdown(start)}</p>
+        </div>
+
+        <a href="${url}" target="_blank"
+           class="mt-3 inline-block text-xs px-3 py-1 rounded ${
+               isSoon ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'
+           } text-white transition-colors">
+            View Contest →
+        </a>
+    `;
+
+    return card;
+}
+
+// ─── Codeforces ───────────────────────────────────────────────────────────────
+
 async function fetchCodeforcesContests() {
+    const container = document.getElementById('codeforces-contests');
     try {
-        const response = await fetch('https://codeforces.com/api/contest.list');
-        const data = await response.json();
-        const contests = data.result.filter(contest => contest.phase === "BEFORE").reverse();
-        
-        const contestContainer = document.getElementById("codeforces-contests");
-        contestContainer.innerHTML = ""; // Clear loading message
-        
-        if (contests.length === 0) {
-            contestContainer.innerHTML = "<p class='text-gray-400'>No upcoming contests.</p>";
+        const res = await fetch('https://codeforces.com/api/contest.list');
+        const data = await res.json();
+        const upcoming = data.result
+            .filter(c => c.phase === 'BEFORE')
+            .reverse();
+
+        container.innerHTML = '';
+        if (!upcoming.length) {
+            container.innerHTML = "<p class='text-gray-400'>No upcoming contests.</p>";
             return;
         }
-        
-        // Get current time and time two days from now
-        const now = new Date();
-        const twoDaysFromNow = new Date(now.getTime() + (2 * 24 * 60 * 60 * 1000));
-        
-        contests.forEach(contest => {
-            const startTime = new Date(contest.startTimeSeconds * 1000);
-            const duration = (contest.durationSeconds / 3600).toFixed(1) + " hrs";
-            
-            // Check if contest is happening within the next two days
-            const isTwoDayContest = startTime >= now && startTime <= twoDaysFromNow;
-            
-            const contestCard = document.createElement('div');
-            contestCard.className = `
-                contest-item 
-                p-4 
-                border 
-                rounded-lg 
-                relative 
-                transition-all 
-                duration-300 
-                hover:scale-105 
-                hover:shadow-lg 
-                cursor-pointer
-                ${isTwoDayContest 
-                    ? 'border-red-500 bg-red-900/20 hover:border-red-300' 
-                    : 'border-blue-500 bg-gray-700 hover:border-blue-300'}
-            `;
-            
-            // Main contest details
-            contestCard.innerHTML = `
-                <h3 class="text-lg font-bold ${isTwoDayContest ? 'text-red-400' : 'text-blue-400'}">
-                    ${contest.name}
-                </h3>
-                <p class="text-sm ${isTwoDayContest ? 'text-red-200' : 'text-gray-300'}">
-                    Starts: ${startTime.toLocaleString()}
-                </p>
-                <p class="text-sm ${isTwoDayContest ? 'text-red-200' : 'text-gray-300'}">
-                    Duration: ${duration}
-                </p>
-                ${isTwoDayContest ? '<div class="absolute top-2 right-2 text-red-500 font-bold">SOON!</div>' : ''}
-            `;
-            
-            // Hover tooltip
-            const hoverTooltip = document.createElement('div');
-            hoverTooltip.className = `
-                absolute 
-                z-10 
-                bottom-full 
-                left-1/2 
-                transform 
-                -translate-x-1/2 
-                -translate-y-2 
-                ${isTwoDayContest ? 'bg-red-900' : 'bg-blue-900'} 
-                text-white 
-                p-3 
-                rounded-lg 
-                shadow-lg 
-                opacity-0 
-                invisible 
-                transition-all 
-                duration-300 
-                contest-tooltip 
-                min-w-[250px] 
-                text-center
-            `;
-            
-            // Additional contest details in tooltip
-            hoverTooltip.innerHTML = `
-                <h4 class="font-bold ${isTwoDayContest ? 'text-red-300' : 'text-blue-300'} mb-2">
-                    Contest Details
-                </h4>
-                <p><strong>ID:</strong> ${contest.id}</p>
-                <p><strong>Type:</strong> ${contest.type}</p>
-                <p><strong>Registered:</strong> ${contest.preparedBy || 'N/A'}</p>
-                <a href="https://codeforces.com/contests/${contest.id}" 
-                   target="_blank" 
-                   class="${isTwoDayContest 
-                       ? 'bg-red-500 hover:bg-red-600' 
-                       : 'bg-blue-500 hover:bg-blue-600'} 
-                   text-white px-3 py-1 rounded inline-block mt-2">
-                    View Contest
-                </a>
-            `;
-            
-            // Append tooltip to contest card
-            contestCard.appendChild(hoverTooltip);
-            
-            // Add event listeners for hover effects
-            contestCard.addEventListener('mouseenter', () => {
-                hoverTooltip.classList.remove('opacity-0', 'invisible');
-                hoverTooltip.classList.add('opacity-100', 'visible');
-            });
-            
-            contestCard.addEventListener('mouseleave', () => {
-                hoverTooltip.classList.remove('opacity-100', 'visible');
-                hoverTooltip.classList.add('opacity-0', 'invisible');
-            });
-            
-            contestContainer.appendChild(contestCard);
+
+        // Summary line
+        const soon = upcoming.filter(c => (new Date(c.startTimeSeconds * 1000) - new Date()) < TWO_DAYS);
+        const summary = document.createElement('p');
+        summary.className = 'text-xs text-gray-400 mb-3';
+        summary.textContent = `${upcoming.length} upcoming${soon.length ? ` · ${soon.length} within 48h` : ''}`;
+        container.appendChild(summary);
+
+        upcoming.forEach((c, i) => {
+            container.appendChild(buildCard({
+                name: c.name,
+                start: new Date(c.startTimeSeconds * 1000),
+                durSecs: c.durationSeconds,
+                url: `https://codeforces.com/contest/${c.id}`
+            }, i, 'cf'));
         });
-    } catch (error) {
-        document.getElementById("codeforces-contests").innerHTML = "<p class='text-red-400'>Failed to load contests.</p>";
+
+    } catch (e) {
+        container.innerHTML = "<p class='text-red-400'>Failed to load Codeforces contests.</p>";
     }
 }
+
+// ─── CodeChef ─────────────────────────────────────────────────────────────────
 
 async function fetchCodechefContests() {
+    const container = document.getElementById('codechef-contests');
     try {
-        const response = await fetch('https://competeapi.vercel.app/contests/codechef/');
-        const data = await response.json();
-        const contests = data.future_contests; // Use future contests from the response
-        
-        const contestContainer = document.getElementById("codechef-contests");
-        contestContainer.innerHTML = ""; // Clear loading message
-        
-        if (contests.length === 0) {
-            contestContainer.innerHTML = "<p class='text-gray-400'>No upcoming contests.</p>";
+        const res = await fetch('https://competeapi.vercel.app/contests/codechef/');
+        const data = await res.json();
+        const upcoming = data.future_contests || [];
+
+        container.innerHTML = '';
+        if (!upcoming.length) {
+            container.innerHTML = "<p class='text-gray-400'>No upcoming contests.</p>";
             return;
         }
-        
-        // Get current time and time two days from now
-        const now = new Date();
-        const twoDaysFromNow = new Date(now.getTime() + (2 * 24 * 60 * 60 * 1000));
-        
-        contests.forEach(contest => {
-            const startTime = new Date(contest.contest_start_date_iso);
-            const duration = (contest.contest_duration / 60).toFixed(1) + " hrs";
-            
-            // Check if contest is happening within the next two days
-            const isTwoDayContest = startTime >= now && startTime <= twoDaysFromNow;
-            
-            const contestCard = document.createElement('div');
-            contestCard.className = `
-                contest-item 
-                p-4 
-                border 
-                rounded-lg 
-                relative 
-                transition-all 
-                duration-500 
-                hover:scale-105 
-                hover:shadow-lg 
-                cursor-pointer
-                ${isTwoDayContest 
-                    ? 'border-red-500 bg-red-900/20 hover:border-red-300' 
-                    : 'border-blue-500 bg-gray-700 hover:border-blue-300'}
-            `;
-            
-            // Main contest details
-            contestCard.innerHTML = `
-                <h3 class="text-lg font-bold ${isTwoDayContest ? 'text-red-400' : 'text-blue-400'}">
-                    ${contest.contest_name}
-                </h3>
-                <p class="text-sm ${isTwoDayContest ? 'text-red-200' : 'text-gray-300'}">
-                    Starts: ${startTime.toLocaleString()}
-                </p>
-                <p class="text-sm ${isTwoDayContest ? 'text-red-200' : 'text-gray-300'}">
-                    Duration: ${duration}
-                </p>
-                ${isTwoDayContest ? '<div class="absolute top-2 right-2 text-red-500 font-bold">SOON!</div>' : ''}
-            `;
-            
-            // Hover tooltip
-            const hoverTooltip = document.createElement('div');
-            hoverTooltip.className = `
-                absolute 
-                z-10 
-                bottom-full 
-                left-1/2 
-                transform 
-                -translate-x-1/2 
-                -translate-y-2 
-                ${isTwoDayContest ? 'bg-red-900' : 'bg-blue-900'} 
-                text-white 
-                p-3 
-                rounded-lg 
-                shadow-lg 
-                opacity-0 
-                invisible 
-                transition-all 
-                duration-300 
-                contest-tooltip 
-                min-w-[250px] 
-                text-center
-            `;
-            
-            // Additional contest details in tooltip
-            hoverTooltip.innerHTML = `
-                <h4 class="font-bold ${isTwoDayContest ? 'text-red-300' : 'text-blue-300'} mb-2">
-                    Contest Details
-                </h4>
-                <p><strong>ID:</strong> ${contest.contest_name}</p>
-                <p><strong>Type:</strong> ${contest.contest_type}</p>
-                <p><strong>Registered:</strong> ${contest.prepared_by || 'N/A'}</p>
-                <a href="https://www.codechef.com/contests/${contest.id}" 
-                   target="_blank" 
-                   class="${isTwoDayContest 
-                       ? 'bg-red-500 hover:bg-red-600' 
-                       : 'bg-blue-500 hover:bg-blue-600'} 
-                   text-white px-3 py-1 rounded inline-block mt-2">
-                    View Contest
-                </a>
-            `;
-            
-            // Append tooltip to contest card
-            contestCard.appendChild(hoverTooltip);
-            
-            // Add event listeners for hover effects
-            contestCard.addEventListener('mouseenter', () => {
-                hoverTooltip.classList.remove('opacity-0', 'invisible');
-                hoverTooltip.classList.add('opacity-100', 'visible');
-            });
-            
-            contestCard.addEventListener('mouseleave', () => {
-                hoverTooltip.classList.remove('opacity-100', 'visible');
-                hoverTooltip.classList.add('opacity-0', 'invisible');
-            });
-            
-            // Append contest card to the container
-            contestContainer.appendChild(contestCard);
+
+        const soon = upcoming.filter(c => (new Date(c.contest_start_date_iso) - new Date()) < TWO_DAYS);
+        const summary = document.createElement('p');
+        summary.className = 'text-xs text-gray-400 mb-3';
+        summary.textContent = `${upcoming.length} upcoming${soon.length ? ` · ${soon.length} within 48h` : ''}`;
+        container.appendChild(summary);
+
+        upcoming.forEach((c, i) => {
+            container.appendChild(buildCard({
+                name: c.contest_name,
+                start: new Date(c.contest_start_date_iso),
+                durSecs: c.contest_duration * 60,
+                url: `https://www.codechef.com/contests/${c.contest_code || ''}`
+            }, i, 'cc'));
         });
-    } catch (error) {
-        document.getElementById("codechef-contests").innerHTML = "<p class='text-red-400'>Failed to load contests.</p>";
+
+    } catch (e) {
+        container.innerHTML = "<p class='text-red-400'>Failed to load CodeChef contests.</p>";
     }
 }
 
+// ─── LeetCode ─────────────────────────────────────────────────────────────────
+
 async function fetchLeetCodeContests() {
+    const container = document.getElementById('leetcode-contests');
     try {
-        const response = await fetch('https://competeapi.vercel.app/contests/leetcode/');
-        const data = await response.json();
-        const contests = data.data.topTwoContests; // Use top two contests from the response
-        
-        const contestContainer = document.getElementById("leetcode-contests");
-        contestContainer.innerHTML = ""; // Clear loading message
-        
-        if (contests.length === 0) {
-            contestContainer.innerHTML = "<p class='text-gray-400'>No upcoming contests.</p>";
+        const res = await fetch('https://competeapi.vercel.app/contests/leetcode/');
+        const data = await res.json();
+        const upcoming = data.data.topTwoContests || [];
+
+        container.innerHTML = '';
+        if (!upcoming.length) {
+            container.innerHTML = "<p class='text-gray-400'>No upcoming contests.</p>";
             return;
         }
-        
-        // Get current time and time two days from now
-        const now = new Date();
-        const twoDaysFromNow = new Date(now.getTime() + (2 * 24 * 60 * 60 * 1000));
-        
-        contests.forEach(contest => {
-            const startTime = new Date(contest.startTime * 1000);
-            const duration = (contest.duration / 3600).toFixed(1) + " hrs";
-            
-            // Check if contest is happening within the next two days
-            const isTwoDayContest = startTime >= now && startTime <= twoDaysFromNow;
-            
-            const contestCard = document.createElement('div');
-            contestCard.className = `
-                contest-item 
-                p-4 
-                border 
-                rounded-lg 
-                relative 
-                transition-all 
-                duration-500 
-                hover:scale-105 
-                hover:shadow-lg 
-                cursor-pointer
-                ${isTwoDayContest 
-                    ? 'border-red-500 bg-red-900/20 hover:border-red-300' 
-                    : 'border-blue-500 bg-gray-700 hover:border-blue-300'}
-            `;
-            
-            // Main contest details
-            contestCard.innerHTML = `
-                <h3 class="text-lg font-bold ${isTwoDayContest ? 'text-red-400' : 'text-blue-400'}">
-                    ${contest.title}
-                </h3>
-                <p class="text-sm ${isTwoDayContest ? 'text-red-200' : 'text-gray-300'}">
-                    Starts: ${startTime.toLocaleString()}
-                </p>
-                <p class="text-sm ${isTwoDayContest ? 'text-red-200' : 'text-gray-300'}">
-                    Duration: ${duration}
-                </p>
-                ${isTwoDayContest ? '<div class="absolute top-2 right-2 text-red-500 font-bold">SOON!</div>' : ''}
-            `;
-            
-            // Hover tooltip
-            const hoverTooltip = document.createElement('div');
-            hoverTooltip.className = `
-                absolute 
-                z-10 
-                bottom-full 
-                left-1/2 
-                transform 
-                -translate-x-1/2 
-                -translate-y-2 
-                ${isTwoDayContest ? 'bg-red-900' : 'bg-blue-900'} 
-                text-white 
-                p-3 
-                rounded-lg 
-                shadow-lg 
-                opacity-0 
-                invisible 
-                transition-all 
-                duration-300 
-                contest-tooltip 
-                min-w-[250px] 
-                text-center
-            `;
-            
-            // Additional contest details in tooltip
-            hoverTooltip.innerHTML = `
-                <h4 class="font-bold ${isTwoDayContest ? 'text-red-300' : 'text-blue-300'} mb-2">
-                    Contest Details
-                </h4>
-                <p><strong>ID:</strong> ${contest.title}</p>
-                <p><strong>Type:</strong> ${contest.type}</p>
-                <p><strong>Registered:</strong> ${contest.preparedBy || 'N/A'}</p>
-                <a href="https://leetcode.com/contest" 
-                   target="_blank" 
-                   class="${isTwoDayContest 
-                       ? 'bg-red-500 hover:bg-red-600' 
-                       : 'bg-blue-500 hover:bg-blue-600'} 
-                   text-white px-3 py-1 rounded inline-block mt-2">
-                    View Contest
-                </a>
-            `;
-            
-            // Append tooltip to contest card
-            contestCard.appendChild(hoverTooltip);
-            
-            // Add event listeners for hover effects
-            contestCard.addEventListener('mouseenter', () => {
-                hoverTooltip.classList.remove('opacity-0', 'invisible');
-                hoverTooltip.classList.add('opacity-100', 'visible');
-            });
-            
-            contestCard.addEventListener('mouseleave', () => {
-                hoverTooltip.classList.remove('opacity-100', 'visible');
-                hoverTooltip.classList.add('opacity-0', 'invisible');
-            });
-            
-            // Append contest card to the container
-            contestContainer.appendChild(contestCard);
+
+        const summary = document.createElement('p');
+        summary.className = 'text-xs text-gray-400 mb-3';
+        summary.textContent = `${upcoming.length} upcoming`;
+        container.appendChild(summary);
+
+        upcoming.forEach((c, i) => {
+            container.appendChild(buildCard({
+                name: c.title,
+                start: new Date(c.startTime * 1000),
+                durSecs: c.duration,
+                url: `https://leetcode.com/contest/${c.titleSlug || ''}`
+            }, i, 'lc'));
         });
-    } catch (error) {
-        document.getElementById("leetcode-contests").innerHTML = "<p class='text-red-400'>Failed to load contests.</p>";
+
+    } catch (e) {
+        container.innerHTML = "<p class='text-red-400'>Failed to load LeetCode contests.</p>";
     }
 }
 
